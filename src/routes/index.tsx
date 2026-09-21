@@ -106,9 +106,25 @@ function ToneShift() {
   };
 
   const copy = async () => {
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      const fallback = document.createElement("textarea");
+      fallback.value = output;
+      fallback.setAttribute("readonly", "");
+      fallback.style.position = "fixed";
+      fallback.style.opacity = "0";
+      document.body.appendChild(fallback);
+      fallback.select();
+      const succeeded = document.execCommand("copy");
+      fallback.remove();
+      if (succeeded) {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
+      }
+    }
   };
 
   return (
