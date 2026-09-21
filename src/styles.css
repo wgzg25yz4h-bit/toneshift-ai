@@ -19,8 +19,8 @@
  */
 
 @theme inline {
-  --font-display: "Fraunces", serif;
-  --font-serif: "Newsreader", serif;
+  --font-display: "Playfair Display", serif;
+  --font-serif: "Lora", serif;
   --font-sans: "Inter", sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -72,17 +72,17 @@
 }
 
 :root {
-  --radius: 1rem;
-  --paper: oklch(0.955 0.018 78);
-  --ink: oklch(0.235 0.018 65);
-  --line: oklch(0.875 0.023 78);
-  --rose: oklch(0.65 0.085 28);
-  --sage: oklch(0.7 0.065 135);
-  --blue: oklch(0.62 0.052 255);
-  --sand: oklch(0.76 0.08 75);
+  --radius: 0.5rem;
+  --paper: oklch(0.975 0.008 78);
+  --ink: oklch(0.205 0.015 60);
+  --line: oklch(0.86 0.016 78);
+  --rose: oklch(0.58 0.105 25);
+  --sage: oklch(0.52 0.075 145);
+  --blue: oklch(0.5 0.075 250);
+  --sand: oklch(0.58 0.09 75);
   --background: var(--paper);
   --foreground: var(--ink);
-  --card: oklch(0.98 0.009 78);
+  --card: oklch(0.992 0.004 78);
   --card-foreground: var(--ink);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
@@ -91,7 +91,7 @@
   --secondary: oklch(0.94 0.018 78);
   --secondary-foreground: var(--ink);
   --muted: oklch(0.94 0.018 78);
-  --muted-foreground: oklch(0.5 0.025 72);
+  --muted-foreground: oklch(0.43 0.022 72);
   --accent: oklch(0.91 0.04 28);
   --accent-foreground: var(--ink);
   --destructive: oklch(0.577 0.245 27.325);
@@ -172,8 +172,102 @@
 
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 
+@keyframes ts-spark {
+  0%, 100% { opacity: 0.45; transform: scale(0.9) rotate(0); }
+  50% { opacity: 1; transform: scale(1.08) rotate(8deg); }
+}
+
 @utility ts-reveal { animation: ts-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @utility ts-spin { animation: ts-spin 0.9s linear infinite; }
+
+@utility ts-kicker {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  padding-inline: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility ts-section-label {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility ts-nav-link {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  transition: color 160ms ease;
+  &:hover { color: var(--ink); }
+  &:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+}
+
+@utility ts-writing-surface {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 1.25rem;
+  box-shadow: 0 18px 45px -38px color-mix(in oklab, var(--ink) 38%, transparent);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  &:focus-within {
+    border-color: var(--rose);
+    box-shadow: 0 20px 50px -35px color-mix(in oklab, var(--rose) 36%, transparent), 0 0 0 3px color-mix(in oklab, var(--rose) 12%, transparent);
+  }
+}
+
+@utility ts-tone-card {
+  min-height: 8.5rem;
+  height: auto;
+  white-space: normal;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.875rem;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
+  &:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--ink) 35%, var(--line)); box-shadow: 0 12px 25px -22px var(--ink); background: var(--paper); }
+}
+
+@utility ts-tone-card-selected {
+  border-color: var(--rose);
+  background: color-mix(in oklab, var(--rose) 8%, var(--paper));
+  box-shadow: inset 3px 0 0 var(--rose);
+  &:hover { border-color: var(--rose); background: color-mix(in oklab, var(--rose) 10%, var(--paper)); }
+}
+
+@utility ts-tone-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 0.25rem;
+  & svg { width: 0.9rem; height: 0.9rem; }
+}
+
+@utility ts-tone-rose { background: color-mix(in oklab, var(--rose) 13%, transparent); color: var(--rose); }
+@utility ts-tone-blue { background: color-mix(in oklab, var(--blue) 13%, transparent); color: var(--blue); }
+@utility ts-tone-sage { background: color-mix(in oklab, var(--sage) 13%, transparent); color: var(--sage); }
+@utility ts-tone-sand { background: color-mix(in oklab, var(--sand) 16%, transparent); color: var(--sand); }
+
+@utility ts-pulse-spark { animation: ts-spark 800ms ease-in-out infinite; }
+@utility ts-ellipsis { display: inline-block; width: 1em; animation: ts-spark 800ms ease-in-out infinite; }
+
+@media (min-width: 640px) {
+  .ts-writing-surface { padding: 1.75rem; }
+  .ts-tone-card { padding: 1rem; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; }
