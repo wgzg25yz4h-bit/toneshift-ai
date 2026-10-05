@@ -8,9 +8,15 @@ import {
   Clipboard,
   Feather,
   Handshake,
+  ChevronDown,
+    GraduationCap,
+  MessageCircle,
   Snowflake,
   Sparkles,
+  Users,
 } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { rewriteMessage } from "@/lib/toneshift.functions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +34,7 @@ export const Route = createFileRoute("/")({
   component: ToneShift,
 });
 
-type Tone = "professional" | "diplomatic" | "ice" | "friendly";
+type Tone = "casual" | "professional" | "diplomatic" | "ice" | "friendly";
 
 const tones = [
   { id: "professional" as const, label: "Professional", copy: "Clear & workplace-ready.", icon: BriefcaseBusiness, color: "blue" },
@@ -37,49 +43,27 @@ const tones = [
   { id: "friendly" as const, label: "Friendly", copy: "Warm & approachable.", icon: Feather, color: "sand" },
 ];
 
-const toneOpeners: Record<Tone, string> = {
-  professional: "I'd like to address a concern directly.",
-  diplomatic: "I'd like to share something that I think would help us work together more effectively.",
-  ice: "I am writing to formally raise a concern.",
-  friendly: "Hey — I wanted to share something that's been on my mind.",
-};
+const spectrum: { id: Tone; label: string }[] = [
+  { id: "casual", label: "Casual" },
+  { id: "friendly", label: "Friendly" },
+  { id: "professional", label: "Professional" },
+  { id: "diplomatic", label: "Diplomatic" },
+  { id: "ice", label: "Formal" },
+];
+const toneName = (t: Tone) => (t === "casual" ? "Casual" : tones.find((x) => x.id === t)!.label);
 
-function transformMessage(input: string, tone: Tone) {
-  const text = input.toLowerCase();
-  if ((text.includes("boss") || text.includes("manager")) && (text.includes("work") || text.includes("task"))) {
-    return {
-      professional: "My workload has increased considerably, and I'd like to discuss priorities and how the additional effort can be recognised.",
-      diplomatic: "I've noticed my workload has grown recently, and I'd appreciate a conversation about priorities and some acknowledgement of the extra effort involved.",
-      ice: "My current workload has increased beyond its previous scope. I would like to request a formal review of priorities and recognition of the additional responsibilities.",
-      friendly: "I've been taking on quite a bit more work lately. Could we chat about priorities and how that extra effort is being recognised?",
-    }[tone];
-  }
-  if (text.includes("late") || text.includes("wait")) {
-    return {
-      professional: "The repeated delays are affecting my schedule. Please let me know when I can reliably expect this to be completed.",
-      diplomatic: "The delays have made planning difficult on my side. Could you share a realistic timeline so we can coordinate more effectively?",
-      ice: "The agreed timeline has not been met. Please provide a definitive completion date at your earliest convenience.",
-      friendly: "The delays have made things a little tricky to plan. Could you let me know what timeline feels realistic from here?",
-    }[tone];
-  }
-  if (text.includes("group") || text.includes("project") || text.includes("team")) {
-    return {
-      professional: "I need everyone to contribute consistently so we can complete this work fairly and on time. Please confirm which tasks you will own.",
-      diplomatic: "I'd like us to rebalance the work so everyone has a clear and fair contribution. Could we agree on individual responsibilities?",
-      ice: "The current distribution of responsibilities is unequal. Each team member is requested to confirm ownership of their assigned tasks.",
-      friendly: "Could we divide the remaining work more evenly? It would help a lot if everyone picked a clear task to own.",
-    }[tone];
-  }
-  const cleaned = input.trim().replace(/\s+/g, " ").replace(/[!?]{2,}/g, ".").replace(/\b(stupid|idiot|useless|hate)\b/gi, "frustrating");
-  const concern = cleaned.charAt(0).toLowerCase() + cleaned.slice(1);
-  const endings: Record<Tone, string> = {
-    professional: "I'd appreciate a clear response and a practical way forward.",
-    diplomatic: "I'd value your perspective and hope we can find a constructive way forward.",
-    ice: "Please advise how this matter will be addressed.",
-    friendly: "Could we talk about how to make this work better?",
-  };
-  return `${toneOpeners[tone]} My concern is that ${concern.replace(/[.]?$/, ".")} ${endings[tone]}`;
-}
+const examples = [
+  { original: "You keep giving me more work and never even say thanks.", tone: "Professional", result: "I’ve noticed that my workload has increased recently, and I’d appreciate discussing how we can prioritize the additional responsibilities." },
+  { original: "This deadline is completely unrealistic.", tone: "Diplomatic", result: "I’m concerned that the current deadline may be challenging to meet while maintaining the expected quality. Could we discuss the timeline or priorities?" },
+  { original: "Why did you not answer my email?", tone: "Friendly", result: "Hey! Just wanted to follow up on my previous email in case it got buried in your inbox." },
+];
+
+const useCases = [
+  { title: "Workplace", copy: "Need to push back on your workload without sounding confrontational?", icon: BriefcaseBusiness, sample: "i'm drowning in tasks and you just keep adding more without asking if i even have time", tone: "professional" as Tone },
+  { title: "University", copy: "Want to ask a professor for an extension without sounding demanding?", icon: GraduationCap, sample: "i need more time for the essay due friday because i was sick all last week, i literally cant finish it", tone: "diplomatic" as Tone },
+  { title: "Teamwork", copy: "Need to address a group member who isn’t contributing?", icon: Users, sample: "jonas hasnt done anything for our group project in 2 weeks and im sick of doing his part", tone: "diplomatic" as Tone },
+  { title: "Everyday", copy: "Want to say something honestly without starting an argument?", icon: MessageCircle, sample: "you always cancel our plans last minute and it really annoys me", tone: "friendly" as Tone },
+];
 
 function ToneShift() {
   const [input, setInput] = useState("");
@@ -90,19 +74,51 @@ function ToneShift() {
   const [copied, setCopied] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  const generate = () => {
-    if (!input.trim()) {
-      setError("Give us something to work with first.");
-      return;
-    }
+  // originalUserInput is the snapshot used for every regeneration; generatedMessage is never reused as input.
+  const [originalUserInput, setOriginalUserInput] = useState("");
+  const [whatChanged, setWhatChanged] = useState<string[]>([]);
+  const [showChanges, setShowChanges] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
+  const [outputTone, setOutputTone] = useState<Tone>("diplomatic");
+  const rewrite = useServerFn(rewriteMessage);
+
+  const runGeneration = async (source: string, nextTone: Tone) => {
     setError("");
     setLoading(true);
     setCopied(false);
-    window.setTimeout(() => {
-      setOutput(transformMessage(input, tone));
+    try {
+      const res = await rewrite({ data: { input: source, tone: nextTone } });
+      if (!res.ok) { setError(res.error); return; }
+      setOriginalUserInput(source);
+      setOutputTone(nextTone);
+      setOutput(res.message);
+      setWhatChanged(res.changes);
+      window.setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    } catch {
+      setError("We couldn't reach ToneShift. Please try again.");
+    } finally {
       setLoading(false);
-      window.setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
-    }, 850);
+    }
+  };
+
+  const generate = () => {
+    if (loading) return;
+    if (!input.trim()) { setError("Give us something to work with first."); return; }
+    void runGeneration(input, tone);
+  };
+
+  const shiftTone = (next: Tone) => {
+    if (loading || !originalUserInput) return;
+    setTone(next);
+    void runGeneration(originalUserInput, next);
+  };
+
+  const tryExample = (sample: string, t: Tone) => {
+    setInput(sample);
+    setTone(t);
+    setError("");
+    document.getElementById("tool")?.scrollIntoView({ behavior: "smooth" });
+    window.setTimeout(() => document.getElementById("message")?.focus({ preventScroll: true }), 500);
   };
 
   const copy = async () => {
@@ -205,18 +221,59 @@ function ToneShift() {
               </div>
             </div>
 
-            {output && !loading && (
-              <div ref={outputRef} className="ts-reveal mt-12 border-t-2 border-ink pt-7">
+            {output && (
+              <div ref={outputRef} className={cn("ts-reveal mt-12 scroll-mt-24 border-t-2 border-ink pt-7 transition-opacity", loading && "opacity-50")} aria-busy={loading}>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                   <div className="min-w-0"><p className="ts-section-label">Final copy · Step 03</p><h3 className="mt-2 font-display text-2xl font-medium sm:text-3xl">Output — the send-this zone</h3></div>
-                  <span className="inline-flex w-fit items-center gap-2 border border-sage/40 bg-sage/10 px-3 py-1.5 text-xs font-semibold text-sage"><Check className="size-3.5" />Ready to send</span>
+                  <span className="inline-flex w-fit items-center gap-2 border border-sage/40 bg-sage/10 px-3 py-1.5 text-xs font-semibold text-sage"><Check className="size-3.5" />Ready to send · {toneName(outputTone)}</span>
                 </div>
                 <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-                  <blockquote className="border-l-4 border-rose bg-paper px-5 py-6 font-serif text-xl leading-relaxed shadow-sm sm:px-7 sm:py-8 sm:text-2xl">“{output}”</blockquote>
+                  <blockquote key={output} className="ts-reveal border-l-4 border-rose bg-paper px-5 py-6 font-serif text-xl leading-relaxed shadow-sm sm:px-7 sm:py-8 sm:text-2xl">“{output}”</blockquote>
                   <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
                     <Button variant="ink" className="min-h-11 min-w-40" onClick={copy}>{copied ? <><Check />Copied ✓</> : <><Clipboard />Copy message</>}</Button>
-                    <Button variant="paper" className="min-h-11 min-w-40" onClick={() => { setOutput(""); document.getElementById("tool")?.scrollIntoView({ behavior: "smooth" }); }}>Try another vibe</Button>
+                    <Button variant="paper" className="min-h-11 min-w-40" onClick={() => document.getElementById("spectrum")?.scrollIntoView({ behavior: "smooth", block: "center" })}>Try another vibe</Button>
                   </div>
+                </div>
+
+                <div className="mt-6 border border-line bg-paper">
+                  <button type="button" onClick={() => setShowChanges((v) => !v)} aria-expanded={showChanges} aria-controls="what-changed" className="flex min-h-12 w-full items-center justify-between px-5 text-left font-display text-lg font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    What changed? <ChevronDown className={cn("size-5 transition-transform", showChanges && "rotate-180")} />
+                  </button>
+                  {showChanges && (
+                    <ul id="what-changed" className="grid gap-2 border-t border-line px-5 py-4 sm:grid-cols-2">
+                      {whatChanged.map((c) => <li key={c} className="flex items-start gap-2 text-sm"><Check className="mt-0.5 size-4 shrink-0 text-sage" />{c}</li>)}
+                    </ul>
+                  )}
+                </div>
+
+                <div id="spectrum" className="mt-10 scroll-mt-24">
+                  <p className="ts-section-label">Tone Spectrum</p>
+                  <p className="mt-2 font-serif text-lg text-muted-foreground">Different situations call for different tones. Choose the version that fits your audience.</p>
+                  <div className="relative mt-5" role="radiogroup" aria-label="Tone spectrum">
+                    <div className="absolute left-[10%] right-[10%] top-[18px] h-px bg-line" aria-hidden="true" />
+                    <div className="relative grid grid-cols-5">
+                      {spectrum.map((s) => {
+                        const active = outputTone === s.id;
+                        return (
+                          <button key={s.id} type="button" role="radio" aria-checked={active} disabled={loading} onClick={() => shiftTone(s.id)} className="group flex min-h-16 flex-col items-center gap-2 rounded-md text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait">
+                            <span className={cn("grid size-9 place-items-center rounded-full border-2 bg-paper transition-all", active ? "border-rose bg-rose text-primary-foreground" : "border-line group-hover:border-ink")}>{active && <Check className="size-4" />}</span>
+                            <span className={cn("text-xs sm:text-sm", active ? "font-semibold text-ink" : "text-muted-foreground")}>{s.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-10">
+                  <Button variant="paper" className="min-h-11" onClick={() => setShowCompare((v) => !v)} aria-expanded={showCompare}>{showCompare ? "Hide comparison" : "Compare original vs. send-ready"}</Button>
+                  {showCompare && (
+                    <div className="ts-reveal mt-5 grid items-stretch gap-4 md:grid-cols-[1fr_auto_1fr]">
+                      <div className="border border-line bg-paper p-5"><p className="ts-section-label">Your original message</p><p className="mt-3 whitespace-pre-wrap font-serif text-lg text-muted-foreground">{originalUserInput}</p></div>
+                      <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase text-rose md:flex-col"><ArrowRight className="size-4 rotate-90 md:rotate-0" />{toneName(outputTone)}</div>
+                      <div className="border-l-4 border-rose bg-paper p-5 shadow-sm"><p className="ts-section-label">Your send-ready version</p><p className="mt-3 font-serif text-lg">{output}</p></div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -230,16 +287,38 @@ function ToneShift() {
           </div>
         </section>
 
-        <section id="why" className="border-y border-line bg-secondary/50">
-          <div className="mx-auto grid max-w-7xl gap-7 px-4 py-14 sm:px-8 md:grid-cols-2 md:items-center md:py-20 lg:px-10">
-            <div><p className="ts-section-label">Why tone matters</p><h2 className="mt-3 max-w-[15ch] font-display text-3xl font-medium leading-tight sm:text-4xl">Your point deserves to land, not get lost in the delivery.</h2></div>
-            <p className="max-w-[52ch] border-l border-line pl-5 font-serif text-lg leading-snug text-muted-foreground">Strong feelings often point to a legitimate concern. ToneShift keeps that concern intact while removing the heat that can distract from it.</p>
+        <section id="why" className="scroll-mt-20 border-y border-line bg-secondary/50">
+          <div className="mx-auto max-w-7xl px-4 py-14 sm:px-8 md:py-20 lg:px-10">
+            <p className="ts-section-label">Why tone matters</p>
+            <h2 className="mt-3 max-w-[22ch] font-display text-3xl font-medium leading-tight sm:text-4xl">Tone doesn’t change what you mean. It changes how your message is received.</h2>
+            <div className="mt-8 grid gap-4">
+              {examples.map((e) => (
+                <article key={e.original} className="grid items-center gap-3 border border-line bg-paper p-5 md:grid-cols-[1fr_auto_1.4fr] md:gap-6">
+                  <div><p className="text-xs font-semibold uppercase text-muted-foreground">Original</p><p className="mt-1 font-serif text-lg">“{e.original}”</p></div>
+                  <span className="inline-flex w-fit items-center gap-1.5 border border-rose/40 px-2.5 py-1 text-xs font-semibold uppercase text-rose">{e.tone} <ArrowRight className="size-3.5" /></span>
+                  <div><p className="text-xs font-semibold uppercase text-sage">Send-ready</p><p className="mt-1 font-serif text-lg">“{e.result}”</p></div>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
         <section id="cases" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-14 sm:px-8 md:py-20 lg:px-10">
           <p className="ts-section-label">Use cases</p>
-          <div className="mt-6 grid gap-8 md:grid-cols-3"><div><p className="text-xs font-semibold uppercase text-rose">Students</p><p className="mt-2 font-serif text-lg">Group projects, deadline extensions and difficult feedback.</p></div><div><p className="text-xs font-semibold uppercase text-sage">At work</p><p className="mt-2 font-serif text-lg">Workload concerns, boundaries and manager conversations.</p></div><div><p className="text-xs font-semibold uppercase text-blue">Everyday</p><p className="mt-2 font-serif text-lg">Awkward follow-ups, misunderstandings and honest requests.</p></div></div>
+          <h2 className="mt-3 font-display text-3xl font-medium sm:text-4xl">Built for real-life awkward messages.</h2>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {useCases.map((u) => {
+              const Icon = u.icon;
+              return (
+                <article key={u.title} className="flex flex-col border border-line bg-card p-5">
+                  <Icon className="size-5 text-rose" aria-hidden="true" />
+                  <h3 className="mt-4 font-display text-xl font-medium">{u.title}</h3>
+                  <p className="mt-2 flex-1 font-serif leading-snug text-muted-foreground">{u.copy}</p>
+                  <Button variant="paper" className="mt-5 min-h-11 w-full" onClick={() => tryExample(u.sample, u.tone)} aria-label={`Try the ${u.title} example`}>Try this <ArrowRight /></Button>
+                </article>
+              );
+            })}
+          </div>
         </section>
       </main>
 
